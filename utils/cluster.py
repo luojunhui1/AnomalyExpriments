@@ -161,7 +161,6 @@ def bi_kmeans(data_mat, k, dist = "dist_eucl"):
     # 初始化聚类初始点
     centroid0 = mean(data_mat, axis = 0).tolist()[0]
     cent_list = [centroid0]
-    print(cent_list)
 
     # 初始化SSE
     for j in range(m):
@@ -171,7 +170,10 @@ def bi_kmeans(data_mat, k, dist = "dist_eucl"):
         lowest_sse = inf 
         for i in range(len(cent_list)):
             # 尝试在每一类簇中进行k=2的kmeans划分
-            ptsin_cur_cluster = data_mat[nonzero(cluster_assment[:, 0].A == i)[0],:]
+            row_indexes = nonzero(cluster_assment[:, 0].A == i)[0]
+            if len(row_indexes) < 2:
+                continue
+            ptsin_cur_cluster = data_mat[row_indexes,:]
             centroid_mat, split_cluster_ass = kmeans(ptsin_cur_cluster,k = 2)
             # 计算分类之后的SSE值
             sse_split = sum(split_cluster_ass[:, 1])
