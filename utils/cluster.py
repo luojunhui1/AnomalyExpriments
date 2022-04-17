@@ -1,10 +1,11 @@
+from cProfile import label
 from sklearn import *
 from numpy import *
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.datasets import make_moons
 import matplotlib.animation as animation
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN, OPTICS
 from scipy.spatial import KDTree
 
 def dist_eucl(vecA, vecB):
@@ -320,6 +321,95 @@ class Optics(object):
             else:
                 label[j] = clsuter_id
         return label
+
+
+def kmeans_lib(data_mat, k, dist = "dist_eucl", create_cent = "rand_cent"):
+    estimator = KMeans(n_clusters=k)#构造聚类器
+    estimator.fit(data_mat)#聚类
+    label_pred = estimator.labels_ #获取聚类标签
+    centroids = estimator.cluster_centers_ #获取聚类中心
+    inertia = estimator.inertia_ # 获取聚类准则的总和
+    return centroids, concatenate([label_pred, inertia], axis=1)
+
+def kpp_means_lib(data_mat, k, dist = "dist_eucl", create_cent = "kpp_cent"):
+    estimator = KMeans(n_clusters=k)#构造聚类器
+    estimator.init('k-means++')
+    estimator.fit(data_mat)#聚类
+    label_pred = estimator.labels_ #获取聚类标签
+    centroids = estimator.cluster_centers_ #获取聚类中心
+    inertia = estimator.inertia_ # 获取聚类准则的总和
+    return centroids, stack([label_pred, inertia]).T
+
+def bi_kmeans_lib(data_mat, k, dist = "dist_eucl", create_cent = "kpp_cent"):
+    m = shape(data_mat)[0]
+
+    # 初始化点的簇
+    cluster_assment = mat(zeros((m, 2)))  # 类别，距离
+
+    # 初始化聚类初始点
+    centroid0 = mean(data_mat, axis = 0).tolist()[0]
+    cent_list = [centroid0]
+
+    # 初始化SSE
+    for j in range(m):
+        cluster_assment[j, 1] = eval(dist)(mat(centroid0), data_mat[j, :]) ** 2 
+
+    while (len(cent_list) < k):
+        lowest_sse = inf 
+        for i in range(len(cent_list)):
+            # 尝试在每一类簇中进行k=2的kmeans划分
+            row_indexes = nonzero(cluster_assment[:, 0].A == i)[0]
+            if len(row_indexes) < 2:
+                continue
+            ptsin_cur_cluster = data_mat[row_indexes,:]
+            centroid_mat, split_cluster_ass = kmeans_lib(ptsin_cur_cluster,k = 2)
+            # 计算分类之后的SSE值
+            sse_split = sum(split_cluster_ass[:, 1])
+            sse_nonsplit = sum(cluster_assment[nonzero(cluster_assment[:, 0].A != i)[0], 1])
+            print("sse_split, sse_nonsplit", sse_split, sse_nonsplit)
+            # 记录最好的划分位置
+            if sse_split + sse_nonsplit < lowest_sse:
+                best_cent_tosplit = i
+                best_new_cents = centroid_mat
+                best_cluster_ass = split_cluster_ass.copy()
+                lowest_sse = sse_split + sse_nonsplit
+        print( 'the bestCentToSplit is: ', best_cent_tosplit)
+        print ('the len of bestClustAss is: ', len(best_cluster_ass))
+        # 更新簇的分配结果
+        best_cluster_ass[nonzero(best_cluster_ass[:, 0].A == 1)[0], 0] = len(cent_list)
+        best_cluster_ass[nonzero(best_cluster_ass[:, 0].A == 0)[0], 0] = best_cent_tosplit
+        cent_list[best_cent_tosplit] = best_new_cents[0, :].tolist()[0]
+        cent_list.append(best_new_cents[1, :].tolist()[0])
+        cluster_assment[nonzero(cluster_assment[:, 0].A == best_cent_tosplit)[0],:] = best_cluster_ass
+    return mat(cent_list), cluster_assment
+
+def dbscan_lib(dataSet, eps, minPts):
+    clustering = DBSCAN(eps = eps, min_samples=minPts).fit(dataSet)
+    labels = clustering.labels_
+    centers = []
+    dists = array([0]*dataSet.shape[0])
+    unique_classes, indices = unique(labels, return_inverse=True)
+    print('unique class num: ', len(unique_classes))
+    for c in range(len(unique_classes)):
+        indexes = list(indices == c)
+        center = mean(dataSet[indexes ,:], axis=0)
+        centers.append(center)
+        dists[indexes] = sum((dataSet[indexes ,:] - repeat([center], sum(indexes), axis=0))**2, axis=1)
+    return array(centers), stack([labels, dists]).T
+
+def optics_lib(dataSet, eps, minPts):
+    clustering = OPTICS(eps = eps, min_samples=minPts).fit(dataSet)
+    labels = clustering.labels_
+    centers = []
+    dists = array([0]*dataSet.shape[0])
+    unique_classes, indices = unique(labels, return_inverse=True)
+    print('unique class num: ', len(unique_classes))
+    for c in range(len(unique_classes)):
+        indexes = list(indices == c)
+        center = mean(dataSet[indexes ,:], axis=0)
+        centers.append(center)
+        dists[indexes] = sum((dataSet[indexes ,:] - repeat([center], sum(indexes), axis=0))**2, axis=1)
+    return array(centers), stack([labels, dists]).T
 
 def plot_cluster(data_mat, cluster_assment, centroid):
     """
